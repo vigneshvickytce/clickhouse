@@ -6,7 +6,7 @@ import java.util.List;
 
 public class clickHouseDemo {
 
-    // --- Connection parameters ---
+    // ── Connection parameters ─────────────────────────────────────────────────
     private static final String MYSQL_URL =
         "jdbc:mysql://localhost:3306/reports_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private static final String MYSQL_USER = "root";
@@ -16,115 +16,113 @@ public class clickHouseDemo {
     private static final String CH_USER = "default";
     private static final String CH_PASS = "";
 
-    // --- SELECT benchmark config ---
+    // ── SELECT benchmark config ───────────────────────────────────────────────
     private static final int WARMUP_RUNS      = 1;
     private static final int TIMED_RUNS       = 3;
     private static final int CURSOR_PAGES     = 5;
     private static final int CURSOR_PAGE_SIZE = 100;
 
-    // --- DML benchmark config ---
+    // ── DML benchmark config ──────────────────────────────────────────────────
     private static final int SINGLE_INSERT_COUNT = 100;
     private static final int BATCH_INSERT_COUNT  = 1_000;
     private static final int UPDATE_COUNT        = 50;
 
-    // 16 columns from user_activity alone
-    private static final String ALL_COLS =
-        "id, user_id, country, event_type, duration_ms, created_at, " +
-        "session_id, device_type, os, browser, page_url, referrer, " +
-        "ip_address, response_time_ms, bytes_transferred, is_error";
+    // ── Column lists ──────────────────────────────────────────────────────────
 
-    // 15 columns across all 3 joined tables (5 from each)
+    // 12 columns from ADSMUserGeneralDetails (id is col 1 → used for cursor nav)
+    private static final String ALL_COLS =
+        "id, unique_id, object_guid, sam_account_name, name, firstname, lastname, " +
+        "initial, display_name, distinguished_name, department, title";
+
+    // 15 columns across all 3 joined AD tables (5 from each)
     private static final String JOIN_COLS =
-        "ua.id, ua.user_id, ua.country, ua.event_type, ua.duration_ms, " +
-        "g.city, g.region, g.latitude, g.longitude, g.isp, " +
-        "d.screen_width, d.screen_height, d.language, d.timezone, d.connection_type";
+        "g.id, g.unique_id, g.name, g.department, g.title, " +
+        "a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, " +
+        "e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties";
 
     private static final String JOIN_CLAUSE =
-        " FROM user_activity ua" +
-        " JOIN activity_geo g    ON g.activity_id = ua.id" +
-        " JOIN activity_device d ON d.activity_id = ua.id";
+        " FROM ADSMUserGeneralDetails g" +
+        " JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id" +
+        " JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id";
 
-    // INSERT SQL templates (MySQL omits id — AUTO_INCREMENT; ClickHouse needs explicit id)
+    // ── DML SQL ───────────────────────────────────────────────────────────────
+
+    // MySQL: id is AUTO_INCREMENT — omit from INSERT
     private static final String MYSQL_INSERT_SQL =
-        "INSERT INTO user_activity " +
-        "(user_id, country, event_type, duration_ms, created_at, session_id," +
-        " device_type, os, browser, page_url, referrer, ip_address," +
-        " response_time_ms, bytes_transferred, is_error)" +
-        " VALUES (?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?)";
+        "INSERT INTO ADSMUserGeneralDetails " +
+        "(unique_id, object_guid, sam_account_name, name, firstname, lastname, initial," +
+        " display_name, distinguished_name, department, title)" +
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?)";
 
-    // ClickHouse INSERT includes event_date + updated_at + is_deleted (ReplacingMergeTree columns)
+    // ClickHouse: explicit id + is_deleted + updated_at (ReplacingMergeTree columns)
     private static final String CH_INSERT_SQL =
-        "INSERT INTO user_activity " +
-        "(id, user_id, country, event_type, duration_ms, created_at, session_id," +
-        " device_type, os, browser, page_url, referrer, ip_address," +
-        " response_time_ms, bytes_transferred, is_error," +
-        " event_date, updated_at, is_deleted)" +
-        " VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?)";
+        "INSERT INTO ADSMUserGeneralDetails " +
+        "(id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial," +
+        " display_name, distinguished_name, department, title, is_deleted, updated_at)" +
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
-    // UPDATE SQL templates (ClickHouse uses ALTER TABLE mutation)
     private static final String MYSQL_UPDATE_SQL =
-        "UPDATE user_activity SET duration_ms = %d, event_type = '%s' WHERE id = %d";
-    private static final String CH_UPDATE_SQL =
-        "ALTER TABLE user_activity UPDATE duration_ms = %d, event_type = '%s' WHERE id = %d";
+        "UPDATE ADSMUserGeneralDetails SET department = ?, title = ? WHERE id = ?";
 
-    // Random data pools for DML inserts
-    private static final String[] DML_COUNTRIES    = {"US","GB","DE","FR","JP","IN","BR","CA","AU","MX"};
-    private static final String[] DML_EVENT_TYPES  = {"login","logout","purchase","view","click","search","share","download"};
-    private static final String[] DML_DEVICE_TYPES = {"mobile","desktop","tablet","smart_tv"};
-    private static final String[] DML_OS_LIST      = {"Windows","macOS","Linux","iOS","Android"};
-    private static final String[] DML_BROWSERS     = {"Chrome","Firefox","Safari","Edge","Opera"};
-    private static final String[] DML_PAGE_URLS    = {"/home","/products","/cart","/checkout","/profile"};
-    private static final String[] DML_REFERRERS    = {"direct","google.com","facebook.com","twitter.com"};
+    private static final String MYSQL_DELETE_SQL =
+        "DELETE FROM ADSMUserGeneralDetails WHERE id = ?";
+
+    // ── DML data pools ────────────────────────────────────────────────────────
+    private static final String[] DML_FIRSTNAMES  = {"John","Jane","Michael","Sarah","David","Emily","Robert","Lisa"};
+    private static final String[] DML_LASTNAMES   = {"Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis"};
+    private static final String[] DML_DEPARTMENTS = {"IT","HR","Finance","Marketing","Sales","Operations","Legal","Engineering"};
+    private static final String[] DML_TITLES      = {"Manager","Director","Developer","Analyst","Engineer","Consultant","Administrator","Specialist"};
+
     private static final DateTimeFormatter DML_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    // --- Query plan: null SQL = section header ---
+    // ── Query plan: null SQL = section header ─────────────────────────────────
     private static final List<String[]> QUERY_PLAN = new ArrayList<>();
     static {
         QUERY_PLAN.add(new String[]{"AGGREGATION", null});
         QUERY_PLAN.add(new String[]{"Count All",
-            "SELECT COUNT(*) FROM user_activity"});
-        QUERY_PLAN.add(new String[]{"Group By Country",
-            "SELECT country, COUNT(*), AVG(duration_ms) FROM user_activity GROUP BY country ORDER BY 2 DESC"});
-        QUERY_PLAN.add(new String[]{"Filter by Country",
-            "SELECT COUNT(*) FROM user_activity WHERE country = 'US'"});
-        QUERY_PLAN.add(new String[]{"Filter by Duration",
-            "SELECT COUNT(*) FROM user_activity WHERE duration_ms > 5000"});
-        QUERY_PLAN.add(new String[]{"Group By Event Type",
-            "SELECT event_type, SUM(duration_ms) FROM user_activity GROUP BY event_type ORDER BY 2 DESC"});
+            "SELECT COUNT(*) FROM ADSMUserGeneralDetails"});
+        QUERY_PLAN.add(new String[]{"Group By Department",
+            "SELECT department, COUNT(*), COUNT(DISTINCT title) FROM ADSMUserGeneralDetails GROUP BY department ORDER BY 2 DESC"});
+        QUERY_PLAN.add(new String[]{"Filter IT Dept",
+            "SELECT COUNT(*) FROM ADSMUserGeneralDetails WHERE department = 'IT'"});
+        QUERY_PLAN.add(new String[]{"Count Enabled Accounts",
+            "SELECT COUNT(*) FROM ADSMUserAccountDetails WHERE account_enabled = 1"});
+        QUERY_PLAN.add(new String[]{"Group By Mailbox DB",
+            "SELECT mailbox_database_name, COUNT(*), AVG(quota_mb) FROM ADSMUserExchangeDetails GROUP BY mailbox_database_name ORDER BY 2 DESC"});
 
-        QUERY_PLAN.add(new String[]{"SORTING  (16 cols, single table)", null});
-        QUERY_PLAN.add(new String[]{"Top 100 by Duration",
-            "SELECT " + ALL_COLS + " FROM user_activity ORDER BY duration_ms DESC LIMIT 100"});
-        QUERY_PLAN.add(new String[]{"Sort 50k by Duration",
-            "SELECT " + ALL_COLS + " FROM user_activity ORDER BY duration_ms DESC LIMIT 50000"});
-        QUERY_PLAN.add(new String[]{"Sort 50k by user_id",
-            "SELECT " + ALL_COLS + " FROM user_activity ORDER BY user_id DESC LIMIT 50000"});
+        QUERY_PLAN.add(new String[]{"SORTING  (12 cols, single table)", null});
+        QUERY_PLAN.add(new String[]{"Top 100 by name",
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails ORDER BY name DESC LIMIT 100"});
+        QUERY_PLAN.add(new String[]{"Sort 50k by department",
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails ORDER BY department DESC LIMIT 50000"});
+        QUERY_PLAN.add(new String[]{"Sort 50k by sam_account_name",
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails ORDER BY sam_account_name DESC LIMIT 50000"});
 
-        QUERY_PLAN.add(new String[]{"CONTAINS SEARCH  (16 cols, single table, LIMIT 1000)", null});
-        QUERY_PLAN.add(new String[]{"LIKE '%user_5%'",
-            "SELECT " + ALL_COLS + " FROM user_activity WHERE user_id LIKE '%user_5%' LIMIT 1000"});
-        QUERY_PLAN.add(new String[]{"LIKE '%urch%' (purchase)",
-            "SELECT " + ALL_COLS + " FROM user_activity WHERE event_type LIKE '%urch%' LIMIT 1000"});
-        QUERY_PLAN.add(new String[]{"LIKE '%J%' (country JP)",
-            "SELECT " + ALL_COLS + " FROM user_activity WHERE country LIKE '%J%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"CONTAINS SEARCH  (12 cols, single table, LIMIT 1000)", null});
+        QUERY_PLAN.add(new String[]{"LIKE name '%John%'",
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails WHERE name LIKE '%John%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"LIKE department '%IT%'",
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails WHERE department LIKE '%IT%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"LIKE dn '%Finance%'",
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails WHERE distinguished_name LIKE '%Finance%' LIMIT 1000"});
 
         QUERY_PLAN.add(new String[]{"SORTING WITH JOIN  (15 cols, 3 tables)", null});
-        QUERY_PLAN.add(new String[]{"JOIN Top 100 by Duration",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " ORDER BY ua.duration_ms DESC LIMIT 100"});
-        QUERY_PLAN.add(new String[]{"JOIN Sort 50k by Duration",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " ORDER BY ua.duration_ms DESC LIMIT 50000"});
-        QUERY_PLAN.add(new String[]{"JOIN Sort 50k by city",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " ORDER BY g.city DESC LIMIT 50000"});
+        QUERY_PLAN.add(new String[]{"JOIN Top 100 by name",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " ORDER BY g.name DESC LIMIT 100"});
+        QUERY_PLAN.add(new String[]{"JOIN Sort 50k by department",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " ORDER BY g.department DESC LIMIT 50000"});
+        QUERY_PLAN.add(new String[]{"JOIN Sort 50k by mailbox DB",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " ORDER BY e.mailbox_database_name DESC LIMIT 50000"});
 
         QUERY_PLAN.add(new String[]{"CONTAINS SEARCH WITH JOIN  (15 cols, LIMIT 1000)", null});
-        QUERY_PLAN.add(new String[]{"JOIN + LIKE user '%user_5%'",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE ua.user_id LIKE '%user_5%' LIMIT 1000"});
-        QUERY_PLAN.add(new String[]{"JOIN + LIKE city '%York%'",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE g.city LIKE '%York%' LIMIT 1000"});
-        QUERY_PLAN.add(new String[]{"JOIN + LIKE isp '%com%'",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE g.isp LIKE '%com%' LIMIT 1000"});
-        QUERY_PLAN.add(new String[]{"JOIN + LIKE language '%en%'",
-            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE d.language LIKE '%en%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"JOIN + LIKE name '%John%'",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE g.name LIKE '%John%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"JOIN + LIKE email '%example%'",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE e.email_address LIKE '%example%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"JOIN + LIKE dept '%IT%'",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE g.department LIKE '%IT%' LIMIT 1000"});
+        QUERY_PLAN.add(new String[]{"JOIN + LIKE logon '%corp%'",
+            "SELECT " + JOIN_COLS + JOIN_CLAUSE + " WHERE a.logon_name LIKE '%corp%' LIMIT 1000"});
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -132,9 +130,9 @@ public class clickHouseDemo {
     // ════════════════════════════════════════════════════════════════════════
 
     public static void main(String[] args) {
-        System.out.println("=".repeat(80));
-        System.out.println("     MySQL vs ClickHouse Performance Benchmark (1,000,000 rows, 3 tables)");
-        System.out.println("=".repeat(80));
+        System.out.println("=".repeat(84));
+        System.out.println("     MySQL vs ClickHouse Performance Benchmark (1,000,000 rows, 3 AD tables)");
+        System.out.println("=".repeat(84));
 
         List<String> names = new ArrayList<>();
         List<String> sqls  = new ArrayList<>();
@@ -148,10 +146,10 @@ public class clickHouseDemo {
         long[] chCursor        = new long[CURSOR_PAGES];
         long[] mysqlCursorJoin = new long[CURSOR_PAGES];
         long[] chCursorJoin    = new long[CURSOR_PAGES];
-        long[] mysqlDml        = new long[4];   // [singleInsert, batchInsert, update, delete]
+        long[] mysqlDml        = new long[4];
         long[] chDml           = new long[4];
 
-        // ---- MySQL ----
+        // ── MySQL ─────────────────────────────────────────────────────────────
         System.out.println("\n[MySQL] Running SELECT benchmarks...");
         try (Connection conn = DriverManager.getConnection(MYSQL_URL, MYSQL_USER, MYSQL_PASS)) {
             for (int q = 0; q < sqls.size(); q++) {
@@ -167,7 +165,7 @@ public class clickHouseDemo {
             System.err.println("[MySQL] Connection failed: " + e.getMessage());
         }
 
-        // ---- ClickHouse ----
+        // ── ClickHouse ────────────────────────────────────────────────────────
         System.out.println("\n[ClickHouse] Running SELECT benchmarks...");
         try (Connection conn = DriverManager.getConnection(CH_URL, CH_USER, CH_PASS)) {
             for (int q = 0; q < sqls.size(); q++) {
@@ -193,7 +191,6 @@ public class clickHouseDemo {
     // DML benchmarks
     // ════════════════════════════════════════════════════════════════════════
 
-    /** Returns [singleInsertMs, batchInsertMs, updateMs, deleteMs]. */
     private static long[] benchmarkDML(Connection conn, boolean isCH) {
         long[] results = new long[4];
         results[0] = runSingleInserts(conn, isCH);
@@ -203,21 +200,18 @@ public class clickHouseDemo {
         return results;
     }
 
-    /** 100 individual single-row INSERTs, one executeUpdate() per row. */
     private static long runSingleInserts(Connection conn, boolean isCH) {
         String sql = isCH ? CH_INSERT_SQL : MYSQL_INSERT_SQL;
-        System.out.printf("  %-35s%n", "Single INSERT (" + SINGLE_INSERT_COUNT + " rows, 1×1)");
-        System.out.printf("    SQL: %s  [×%d, one per execute]%n", sql, SINGLE_INSERT_COUNT);
-        System.out.flush();
+        System.out.printf("  %-40s%n", "Single INSERT (" + SINGLE_INSERT_COUNT + " rows, 1×1)");
+        System.out.printf("    SQL: %s  [×%d]%n", sql, SINGLE_INSERT_COUNT);
 
         java.util.Random rng = new java.util.Random(99);
-        LocalDateTime now = LocalDateTime.now();
         long baseId = 5_000_000L;
 
         long t0 = System.currentTimeMillis();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < SINGLE_INSERT_COUNT; i++) {
-                bindDmlInsert(ps, rng, now, isCH, baseId + i, false);
+                bindDmlInsert(ps, rng, isCH, baseId + i, null, false);
                 ps.executeUpdate();
             }
         } catch (SQLException e) {
@@ -229,21 +223,18 @@ public class clickHouseDemo {
         return elapsed;
     }
 
-    /** 1 batch of 1000 rows via addBatch / executeBatch. */
     private static long runBatchInsert(Connection conn, boolean isCH) {
         String sql = isCH ? CH_INSERT_SQL : MYSQL_INSERT_SQL;
-        System.out.printf("  %-35s%n", "Batch INSERT (" + BATCH_INSERT_COUNT + " rows)");
+        System.out.printf("  %-40s%n", "Batch INSERT (" + BATCH_INSERT_COUNT + " rows)");
         System.out.printf("    SQL: %s  [×%d, batched]%n", sql, BATCH_INSERT_COUNT);
-        System.out.flush();
 
         java.util.Random rng = new java.util.Random(88);
-        LocalDateTime now = LocalDateTime.now();
         long baseId = 6_000_000L;
 
         long t0 = System.currentTimeMillis();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < BATCH_INSERT_COUNT; i++) {
-                bindDmlInsert(ps, rng, now, isCH, baseId + i, false);
+                bindDmlInsert(ps, rng, isCH, baseId + i, null, false);
                 ps.addBatch();
             }
             ps.executeBatch();
@@ -257,44 +248,45 @@ public class clickHouseDemo {
     }
 
     /**
-     * MySQL      : UPDATE user_activity SET ... WHERE id = ?  (in-place B-tree update)
-     * ClickHouse : INSERT new row with same ORDER BY key (user_id, event_date) and
-     *              newer updated_at. ReplacingMergeTree keeps the latest version on
-     *              the next background merge. No ALTER TABLE mutation needed.
+     * MySQL      : UPDATE ADSMUserGeneralDetails SET department=?, title=? WHERE id=?
+     * ClickHouse : INSERT upsert — same unique_id as existing row + newer updated_at.
+     *              ReplacingMergeTree keeps the latest version on next background merge.
      */
     private static long runUpdates(Connection conn, boolean isCH) {
-        System.out.printf("  %-35s%n", "UPDATE (" + UPDATE_COUNT + " rows)");
+        System.out.printf("  %-40s%n", "UPDATE (" + UPDATE_COUNT + " rows)");
         if (isCH) {
-            System.out.printf("    SQL: INSERT upsert — same (user_id, event_date) + newer updated_at%n");
+            System.out.printf("    SQL: INSERT upsert — same unique_id as target row + newer updated_at%n");
             System.out.printf("         ReplacingMergeTree deduplicates on next merge, keeping latest row%n");
         } else {
             System.out.printf("    SQL: %s  [×%d]%n", MYSQL_UPDATE_SQL, UPDATE_COUNT);
         }
-        System.out.flush();
 
         java.util.Random rng = new java.util.Random(77);
-        LocalDateTime    now = LocalDateTime.now();
         long baseId = 7_000_000L;
 
         long t0 = System.currentTimeMillis();
         if (isCH) {
-            // Upsert: insert a row with the same (user_id, event_date) key but
-            // a fresh updated_at so ReplacingMergeTree picks this as the winner
             try (PreparedStatement ps = conn.prepareStatement(CH_INSERT_SQL)) {
                 for (int i = 0; i < UPDATE_COUNT; i++) {
-                    bindDmlInsert(ps, rng, now, true, baseId + i, false);
+                    // Target an existing seeded row — same unique_id triggers dedup on merge
+                    long targetId = rng.nextInt(1_000_000) + 1L;
+                    String existingUniqueId = String.format("uid-%010d", targetId);
+                    bindDmlInsert(ps, rng, true, baseId + i, existingUniqueId, false);
                     ps.executeUpdate();
                 }
             } catch (SQLException e) {
                 System.err.println("    Upsert error: " + e.getMessage());
             }
         } else {
-            try (Statement stmt = conn.createStatement()) {
+            try (PreparedStatement ps = conn.prepareStatement(MYSQL_UPDATE_SQL)) {
                 for (int i = 0; i < UPDATE_COUNT; i++) {
-                    long   id       = rng.nextInt(1_000_000) + 1L;
-                    int    duration = rng.nextInt(10_000);
-                    String evtType  = DML_EVENT_TYPES[rng.nextInt(DML_EVENT_TYPES.length)];
-                    stmt.execute(String.format(MYSQL_UPDATE_SQL, duration, evtType, id));
+                    long   targetId = rng.nextInt(1_000_000) + 1L;
+                    String newDept  = DML_DEPARTMENTS[rng.nextInt(DML_DEPARTMENTS.length)];
+                    String newTitle = DML_TITLES[rng.nextInt(DML_TITLES.length)];
+                    ps.setString(1, newDept);
+                    ps.setString(2, newTitle);
+                    ps.setLong  (3, targetId);
+                    ps.executeUpdate();
                 }
             } catch (SQLException e) {
                 System.err.println("    UPDATE error: " + e.getMessage());
@@ -307,41 +299,40 @@ public class clickHouseDemo {
     }
 
     /**
-     * MySQL      : DELETE FROM user_activity WHERE id = ?  (hard delete)
-     * ClickHouse : INSERT a new row with is_deleted = 1 and newer updated_at.
-     *              ReplacingMergeTree keeps only this marker on next merge.
-     *              Read queries use:  SELECT ... FINAL WHERE is_deleted = 0
+     * MySQL      : DELETE FROM ADSMUserGeneralDetails WHERE id=?
+     * ClickHouse : INSERT soft-delete — same unique_id + is_deleted=1 + newer updated_at.
+     *              Read with: SELECT ... FINAL WHERE is_deleted = 0
      */
     private static long runDeletes(Connection conn, boolean isCH) {
-        System.out.printf("  %-35s%n", "DELETE (" + UPDATE_COUNT + " rows)");
+        System.out.printf("  %-40s%n", "DELETE (" + UPDATE_COUNT + " rows)");
         if (isCH) {
-            System.out.printf("    SQL: INSERT soft-delete — same (user_id, event_date) + is_deleted=1%n");
+            System.out.printf("    SQL: INSERT soft-delete — same unique_id + is_deleted=1 + newer updated_at%n");
             System.out.printf("         Read with: SELECT ... FINAL WHERE is_deleted = 0%n");
         } else {
-            System.out.printf("    SQL: DELETE FROM user_activity WHERE id = ?  [×%d]%n", UPDATE_COUNT);
+            System.out.printf("    SQL: %s  [×%d]%n", MYSQL_DELETE_SQL, UPDATE_COUNT);
         }
-        System.out.flush();
 
         java.util.Random rng = new java.util.Random(66);
-        LocalDateTime    now = LocalDateTime.now();
         long baseId = 8_000_000L;
 
         long t0 = System.currentTimeMillis();
         if (isCH) {
-            // Soft-delete: insert a marker row with is_deleted=1 and newer updated_at
             try (PreparedStatement ps = conn.prepareStatement(CH_INSERT_SQL)) {
                 for (int i = 0; i < UPDATE_COUNT; i++) {
-                    bindDmlInsert(ps, rng, now, true, baseId + i, true);  // isDeleted=true
+                    long targetId = rng.nextInt(1_000_000) + 1L;
+                    String existingUniqueId = String.format("uid-%010d", targetId);
+                    bindDmlInsert(ps, rng, true, baseId + i, existingUniqueId, true);
                     ps.executeUpdate();
                 }
             } catch (SQLException e) {
                 System.err.println("    Soft-delete error: " + e.getMessage());
             }
         } else {
-            try (Statement stmt = conn.createStatement()) {
+            try (PreparedStatement ps = conn.prepareStatement(MYSQL_DELETE_SQL)) {
                 for (int i = 0; i < UPDATE_COUNT; i++) {
-                    long id = rng.nextInt(1_000_000) + 1L;
-                    stmt.execute("DELETE FROM user_activity WHERE id = " + id);
+                    long targetId = rng.nextInt(1_000_000) + 1L;
+                    ps.setLong(1, targetId);
+                    ps.executeUpdate();
                 }
             } catch (SQLException e) {
                 System.err.println("    DELETE error: " + e.getMessage());
@@ -354,39 +345,45 @@ public class clickHouseDemo {
     }
 
     /**
-     * Binds all user_activity columns.
-     * isDeleted=true sets is_deleted=1 (soft-delete marker for ClickHouse).
+     * Binds all ADSMUserGeneralDetails columns for DML.
+     * uniqueIdOverride: if non-null, uses this unique_id instead of deriving from rowId.
+     *   Used for CH upsert/soft-delete to target an existing row's ORDER BY key.
+     * isDeleted: sets is_deleted=1 for CH soft-delete pattern.
      */
     private static void bindDmlInsert(PreparedStatement ps,
                                        java.util.Random rng,
-                                       LocalDateTime now,
                                        boolean isCH,
-                                       long id,
+                                       long rowId,
+                                       String uniqueIdOverride,
                                        boolean isDeleted) throws SQLException {
+        String uniqueId   = uniqueIdOverride != null
+                            ? uniqueIdOverride
+                            : String.format("uid-%010d", rowId);
+        String objectGuid = String.format("%08x-0000-0000-0000-%012x", rowId, rowId);
+        String fname      = DML_FIRSTNAMES[rng.nextInt(DML_FIRSTNAMES.length)];
+        String lname      = DML_LASTNAMES[rng.nextInt(DML_LASTNAMES.length)];
+        String dept       = DML_DEPARTMENTS[rng.nextInt(DML_DEPARTMENTS.length)];
+        String title      = DML_TITLES[rng.nextInt(DML_TITLES.length)];
+        String samName    = (Character.toLowerCase(fname.charAt(0)) + lname).toLowerCase();
+        String fullName   = fname + " " + lname;
+        String dn         = "CN=" + fullName + ",OU=" + dept + ",DC=example,DC=com";
+
         int p = 1;
-        if (isCH) ps.setLong(p++, id);
-        ps.setString(p++, "user_"  + (rng.nextInt(100_000) + 1));
-        ps.setString(p++, DML_COUNTRIES[rng.nextInt(DML_COUNTRIES.length)]);
-        ps.setString(p++, DML_EVENT_TYPES[rng.nextInt(DML_EVENT_TYPES.length)]);
-        ps.setInt   (p++, rng.nextInt(10_000));
-        LocalDateTime created = now.minusSeconds(rng.nextInt(30 * 24 * 3600));
-        ps.setString(p++, created.format(DML_FMT));              // created_at
-        ps.setString(p++, "sess_"  + (rng.nextInt(500_000) + 1));
-        ps.setString(p++, DML_DEVICE_TYPES[rng.nextInt(DML_DEVICE_TYPES.length)]);
-        ps.setString(p++, DML_OS_LIST[rng.nextInt(DML_OS_LIST.length)]);
-        ps.setString(p++, DML_BROWSERS[rng.nextInt(DML_BROWSERS.length)]);
-        ps.setString(p++, DML_PAGE_URLS[rng.nextInt(DML_PAGE_URLS.length)]);
-        ps.setString(p++, DML_REFERRERS[rng.nextInt(DML_REFERRERS.length)]);
-        ps.setString(p++, rng.nextInt(256) + "." + rng.nextInt(256) + "."
-                        + rng.nextInt(256) + "." + rng.nextInt(256));
-        ps.setInt   (p++, rng.nextInt(2_000));
-        ps.setInt   (p++, rng.nextInt(1_000_000));
-        ps.setInt   (p++, rng.nextInt(10) == 0 ? 1 : 0);        // is_error
+        if (isCH) ps.setLong(p++, rowId);
+        ps.setString(p++, uniqueId);
+        ps.setString(p++, objectGuid);
+        ps.setString(p++, samName);
+        ps.setString(p++, fullName);
+        ps.setString(p++, fname);
+        ps.setString(p++, lname);
+        ps.setString(p++, String.valueOf(fname.charAt(0)));
+        ps.setString(p++, fullName);
+        ps.setString(p++, dn);
+        ps.setString(p++, dept);
+        ps.setString(p++, title);
         if (isCH) {
-            // ReplacingMergeTree extra columns
-            ps.setString(p++, created.toLocalDate().toString()); // event_date (ORDER BY key)
-            ps.setString(p++, LocalDateTime.now().format(DML_FMT)); // updated_at = now (version)
-            ps.setInt   (p,   isDeleted ? 1 : 0);                // is_deleted flag
+            ps.setInt   (p++, isDeleted ? 1 : 0);
+            ps.setString(p,   LocalDateTime.now().format(DML_FMT));
         }
     }
 
@@ -396,28 +393,27 @@ public class clickHouseDemo {
 
     private static long[] benchmarkCursorNav(Connection conn) {
         return runCursorBenchmark(conn,
-            "SELECT " + ALL_COLS + " FROM user_activity"
+            "SELECT " + ALL_COLS + " FROM ADSMUserGeneralDetails"
             + " WHERE id > %d ORDER BY id LIMIT " + CURSOR_PAGE_SIZE);
     }
 
     private static long[] benchmarkCursorNavJoin(Connection conn) {
         return runCursorBenchmark(conn,
             "SELECT " + JOIN_COLS + JOIN_CLAUSE
-            + " WHERE ua.id > %d ORDER BY ua.id LIMIT " + CURSOR_PAGE_SIZE);
+            + " WHERE g.id > %d ORDER BY g.id LIMIT " + CURSOR_PAGE_SIZE);
     }
 
     private static long[] runCursorBenchmark(Connection conn, String sqlTemplate) {
         long[] times  = new long[CURSOR_PAGES];
-        long cursor   = 0;
+        long   cursor = 0;
 
         for (int page = 0; page < CURSOR_PAGES; page++) {
             String sql = String.format(sqlTemplate, cursor);
 
-            System.out.printf("  %-35s%n", "Nav " + (page + 1) + " (id > " + cursor + ")");
+            System.out.printf("  %-40s%n", "Nav " + (page + 1) + " (id > " + cursor + ")");
             System.out.printf("    SQL: %s%n", sql);
-            System.out.flush();
 
-            runQuery(conn, sql);   // warmup
+            runQuery(conn, sql);  // warmup
 
             long total      = 0;
             long nextCursor = cursor;
@@ -450,9 +446,8 @@ public class clickHouseDemo {
     // ════════════════════════════════════════════════════════════════════════
 
     private static long benchmark(Connection conn, String name, String sql) {
-        System.out.printf("  %-35s%n", name);
+        System.out.printf("  %-40s%n", name);
         System.out.printf("    SQL: %s%n", sql);
-        System.out.flush();
 
         for (int i = 0; i < WARMUP_RUNS; i++) runQuery(conn, sql);
 
@@ -482,16 +477,16 @@ public class clickHouseDemo {
     // ════════════════════════════════════════════════════════════════════════
 
     private static void printResults(List<String> names,
-                                     long[] mysql,      long[] ch,
-                                     long[] mysqlCur,   long[] chCur,
-                                     long[] mysqlCurJ,  long[] chCurJ,
-                                     long[] mysqlDml,   long[] chDml) {
+                                     long[] mysql,     long[] ch,
+                                     long[] mysqlCur,  long[] chCur,
+                                     long[] mysqlCurJ, long[] chCurJ,
+                                     long[] mysqlDml,  long[] chDml) {
         System.out.println();
         String div  = "=".repeat(84);
         String thin = "-".repeat(84);
 
         System.out.println(div);
-        System.out.printf("  %-33s  %-14s  %-14s  %s%n",
+        System.out.printf("  %-38s  %-14s  %-14s  %s%n",
             "Query", "MySQL (ms)", "ClickHouse (ms)", "Winner");
         System.out.println(thin);
 
@@ -506,40 +501,40 @@ public class clickHouseDemo {
             }
         }
 
-        // Cursor nav
-        System.out.printf("%n  ── CURSOR NAV  (single table, 16 cols, %d pages × %d rows) ──%n",
+        // Cursor nav — single table
+        System.out.printf("%n  ── CURSOR NAV  (single table, 12 cols, %d pages × %d rows) ──%n",
             CURSOR_PAGES, CURSOR_PAGE_SIZE);
         for (int p = 0; p < CURSOR_PAGES; p++) {
-            printRow("Nav " + (p + 1) + " (page " + (p + 1) + ")", mysqlCur[p], chCur[p]);
+            printRow("Nav page " + (p + 1), mysqlCur[p], chCur[p]);
         }
 
-        System.out.printf("%n  ── CURSOR NAV WITH JOIN  (3 tables, 15 cols, %d pages × %d rows) ──%n",
+        // Cursor nav — 3-table JOIN
+        System.out.printf("%n  ── CURSOR NAV WITH JOIN  (3 AD tables, 15 cols, %d pages × %d rows) ──%n",
             CURSOR_PAGES, CURSOR_PAGE_SIZE);
         for (int p = 0; p < CURSOR_PAGES; p++) {
-            printRow("Nav " + (p + 1) + " (page " + (p + 1) + ")", mysqlCurJ[p], chCurJ[p]);
+            printRow("Nav page " + (p + 1), mysqlCurJ[p], chCurJ[p]);
         }
 
-        // DML section
+        // DML
         System.out.printf("%n  ── DML PERFORMANCE ──%n");
-        System.out.printf("  %-33s  %-14s  %-14s  %s%n",
+        System.out.printf("  %-38s  %-14s  %-14s  %s%n",
             "", "MySQL (ms)", "ClickHouse (ms)", "Winner");
         System.out.println(thin);
-        printRow("Single INSERT (" + SINGLE_INSERT_COUNT + " rows, 1×1)",  mysqlDml[0], chDml[0]);
-        printRow("Batch  INSERT (" + BATCH_INSERT_COUNT  + " rows)",        mysqlDml[1], chDml[1]);
-        printRow("UPDATE (" + UPDATE_COUNT + " rows)",                      mysqlDml[2], chDml[2]);
-        printRow("DELETE (" + UPDATE_COUNT + " rows)",                      mysqlDml[3], chDml[3]);
+        printRow("Single INSERT (" + SINGLE_INSERT_COUNT + " rows, 1×1)", mysqlDml[0], chDml[0]);
+        printRow("Batch  INSERT (" + BATCH_INSERT_COUNT  + " rows)",       mysqlDml[1], chDml[1]);
+        printRow("UPDATE (" + UPDATE_COUNT + " rows)",                     mysqlDml[2], chDml[2]);
+        printRow("DELETE (" + UPDATE_COUNT + " rows)",                     mysqlDml[3], chDml[3]);
         System.out.println();
         System.out.println("  Note — ClickHouse UPDATE/DELETE strategy (ReplacingMergeTree):");
-        System.out.println("    UPDATE → INSERT same (user_id, event_date) key + newer updated_at");
-        System.out.println("             Engine deduplicates on next background merge (no ALTER TABLE mutation)");
-        System.out.println("    DELETE → INSERT is_deleted=1 marker row + newer updated_at");
+        System.out.println("    UPDATE → INSERT same unique_id + newer updated_at");
+        System.out.println("             Engine deduplicates on next background merge, keeping latest row");
+        System.out.println("    DELETE → INSERT same unique_id + is_deleted=1 + newer updated_at");
         System.out.println("             Read with: SELECT ... FINAL WHERE is_deleted = 0");
 
         System.out.println();
         System.out.println(div);
     }
 
-    /** Prints one result row. Shows which engine won and by how much. */
     private static void printRow(String name, long mysql, long ch) {
         String winner;
         if (mysql == 0 || ch == 0) {
@@ -549,6 +544,6 @@ public class clickHouseDemo {
         } else {
             winner = String.format("MySQL %.1fx faster", (double) ch / mysql);
         }
-        System.out.printf("  %-33s  %-14d  %-14d  %s%n", name, mysql, ch, winner);
+        System.out.printf("  %-38s  %-14d  %-14d  %s%n", name, mysql, ch, winner);
     }
 }

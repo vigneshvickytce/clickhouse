@@ -10,7 +10,6 @@ import java.sql.*;
  *   3. Advance cursor to the last id in the batch.
  *   4. Repeat until the query returns 0 rows.
  *   5. Print per-batch progress and a final side-by-side comparison.
- *
  * Run:
  *   mvn exec:java -Dexec.mainClass=ExportBenchmark
  */
@@ -32,21 +31,20 @@ public class ExportBenchmark {
     private static final String MYSQL_OUTPUT = "export_mysql.csv";
     private static final String CH_OUTPUT    = "export_clickhouse.csv";
 
-    // 16 common columns (no ReplacingMergeTree internals)
+    // 12 columns from ADSMUserGeneralDetails (no ReplacingMergeTree internals)
     private static final String ALL_COLS =
-        "id, user_id, country, event_type, duration_ms, created_at, " +
-        "session_id, device_type, os, browser, page_url, referrer, " +
-        "ip_address, response_time_ms, bytes_transferred, is_error";
+        "id, unique_id, object_guid, sam_account_name, name, firstname, lastname, " +
+        "initial, display_name, distinguished_name, department, title";
 
     // %d = cursor (last id from previous batch); starts at 0
     private static final String MYSQL_SQL_TPL =
         "SELECT " + ALL_COLS +
-        " FROM user_activity WHERE id > %d ORDER BY id LIMIT " + BATCH_SIZE;
+        " FROM ADSMUserGeneralDetails WHERE id > %d ORDER BY id LIMIT " + BATCH_SIZE;
 
     // ClickHouse: FINAL deduplicates ReplacingMergeTree; exclude soft-deleted rows
     private static final String CH_SQL_TPL =
         "SELECT " + ALL_COLS +
-        " FROM user_activity FINAL WHERE is_deleted = 0 AND id > %d ORDER BY id LIMIT " + BATCH_SIZE;
+        " FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id > %d ORDER BY id LIMIT " + BATCH_SIZE;
 
     private static final String CSV_HEADER = ALL_COLS.replace(" ", "");
 
@@ -227,7 +225,9 @@ public class ExportBenchmark {
         System.out.println("Notes:");
         System.out.println("  Both DBs use cursor pagination:  WHERE id > {lastId} ORDER BY id LIMIT 5000");
         System.out.println("  ClickHouse adds:                 FINAL WHERE is_deleted = 0");
-        System.out.println("    FINAL forces ReplacingMergeTree dedup before scan.");
+        System.out.println("    FINAL forces ReplacingMergeTree dedup (ADSMUserGeneralDetails) before scan.");
+        System.out.println("  ClickHouse ORDER BY key is (unique_id), not (id) — cursor queries on id");
+        System.out.println("    do not benefit from CH's primary index, causing full scan per page.");
         System.out.println("  Each page is an independent query — no open cursor/stream held.");
     }
 
