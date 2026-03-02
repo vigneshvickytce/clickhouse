@@ -37,3 +37,9 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Benchmark output (large files — keep local only) ###
+*.csv
+benchmark_results.txt
+export_results.txt
+benchmark_report.html
