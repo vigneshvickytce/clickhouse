@@ -1,0 +1,20 @@
+# CSV Export Benchmark Results
+# Generated: Sat Feb 28 18:01:31 IST 2026
+# Used by clickHouseDemo.writeHtmlReport() to include in benchmark_report.html
+
+export.mysql.totalMs=2320
+export.mysql.rowsExported=1001050
+export.mysql.batchCount=201
+export.mysql.fileSizeBytes=177358786
+export.mysql.minBatchMs=4
+export.mysql.avgBatchMs=11
+export.mysql.maxBatchMs=69
+export.mysql.sqlTemplate=SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id > {cursor} ORDER BY id LIMIT 5000
+export.ch.totalMs=26730
+export.ch.rowsExported=1001000
+export.ch.batchCount=201
+export.ch.fileSizeBytes=177349879
+export.ch.minBatchMs=5
+export.ch.avgBatchMs=132
+export.ch.maxBatchMs=235
+export.ch.sqlTemplate=SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND unique_id > '{cursor}' ORDER BY unique_id LIMIT 5000

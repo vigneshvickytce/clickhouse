@@ -1,0 +1,821 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>MySQL vs ClickHouse Benchmark</title><style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:32px;background:#f0f2f5;color:#222}
+h1{margin:0 0 4px;font-size:1.6rem}p.sub{margin:0 0 28px;color:#666;font-size:.88rem}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,.08);margin-bottom:32px;overflow:hidden}
+thead tr.tbl-title th{background:#0f172a;color:#f8fafc;font-size:.9rem;padding:11px 16px;text-align:left;letter-spacing:.02em}
+thead tr.col-hdr th{background:#1e293b;color:#94a3b8;font-size:.75rem;padding:7px 16px;text-align:left;letter-spacing:.06em;text-transform:uppercase}
+td{padding:9px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:.88rem}
+tr:last-child td{border-bottom:none}
+tr.sec td{background:#334155;color:#cbd5e1;font-weight:700;font-size:.75rem;letter-spacing:.06em;padding:6px 16px;text-transform:uppercase}
+.qname{font-weight:600}
+.qsql{font-family:'SFMono-Regular',Consolas,monospace;font-size:.72rem;color:#64748b;margin-top:5px;word-break:break-all;line-height:1.5}
+.win{background:#dcfce7!important;color:#14532d;font-weight:700}
+.wlabel{color:#16a34a;font-weight:700;white-space:nowrap}
+.tie,.na{color:#94a3b8}
+.num{font-variant-numeric:tabular-nums}
+</style></head><body>
+<h1>MySQL vs ClickHouse Benchmark</h1>
+<p class="sub">1,000,000 rows &bull; 3 AD tables &bull; Generated 2026-02-28 18:02:13</p>
+<table>
+<thead>
+<tr class="tbl-title"><th colspan="4">SELECT Benchmarks</th></tr>
+<tr class="col-hdr"><th>Query &amp; SQL</th><th>MySQL (ms)</th><th>ClickHouse (ms)</th><th>Winner</th></tr>
+</thead><tbody>
+<tr class="sec"><td colspan="4">AGGREGATION</td></tr>
+<tr>
+<td><div class="qname">Count All</div><div class="qsql">SELECT COUNT(*) FROM ADSMUserGeneralDetails</div></td>
+<td class="num">95 ms</td>
+<td class="num win">2 ms</td>
+<td class="wlabel">CH 47.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Group By Department</div><div class="qsql">SELECT department, COUNT(*), COUNT(DISTINCT title) FROM ADSMUserGeneralDetails GROUP BY department ORDER BY 2 DESC</div></td>
+<td class="num">8315 ms</td>
+<td class="num win">29 ms</td>
+<td class="wlabel">CH 286.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Filter IT Dept</div><div class="qsql">SELECT COUNT(*) FROM ADSMUserGeneralDetails WHERE department = 'IT'</div></td>
+<td class="num win">12 ms</td>
+<td class="num">13 ms</td>
+<td class="wlabel">MySQL 1.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Count Enabled Accounts</div><div class="qsql">SELECT COUNT(*) FROM ADSMUserAccountDetails WHERE account_enabled = 1</div></td>
+<td class="num">100 ms</td>
+<td class="num win">3 ms</td>
+<td class="wlabel">CH 33.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Group By Mailbox DB</div><div class="qsql">SELECT mailbox_database_name, COUNT(*), AVG(quota_mb) FROM ADSMUserExchangeDetails GROUP BY mailbox_database_name ORDER BY 2 DESC</div></td>
+<td class="num">3359 ms</td>
+<td class="num win">10 ms</td>
+<td class="wlabel">CH 335.9x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">IN FILTER  (10,000 random ids, scattered across 1M)</td></tr>
+<tr>
+<td><div class="qname">IN 10k — COUNT(*)</div><div class="qsql">SELECT COUNT(*) FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])</div></td>
+<td class="num win">50 ms</td>
+<td class="num">92 ms</td>
+<td class="wlabel">MySQL 1.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k — fetch all cols</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])</div></td>
+<td class="num win">57 ms</td>
+<td class="num">184 ms</td>
+<td class="wlabel">MySQL 3.2x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k — GROUP BY dept</div><div class="qsql">SELECT department, COUNT(*) FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) GROUP BY department ORDER BY 2 DESC</div></td>
+<td class="num win">55 ms</td>
+<td class="num">85 ms</td>
+<td class="wlabel">MySQL 1.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k — JOIN fetch</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])</div></td>
+<td class="num win">160 ms</td>
+<td class="num">343 ms</td>
+<td class="wlabel">MySQL 2.1x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">IN FILTER + SORTING  (10,000 ids)</td></tr>
+<tr>
+<td><div class="qname">IN 10k + sort by name</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY name DESC</div></td>
+<td class="num win">69 ms</td>
+<td class="num">208 ms</td>
+<td class="wlabel">MySQL 3.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + sort by dept</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY department DESC</div></td>
+<td class="num win">68 ms</td>
+<td class="num">191 ms</td>
+<td class="wlabel">MySQL 2.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + sort by name</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY g.name DESC</div></td>
+<td class="num win">214 ms</td>
+<td class="num">345 ms</td>
+<td class="wlabel">MySQL 1.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + sort by mailbox</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY e.mailbox_database_name DESC</div></td>
+<td class="num win">171 ms</td>
+<td class="num">359 ms</td>
+<td class="wlabel">MySQL 2.1x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">IN FILTER + CONTAINS SEARCH  (10,000 ids)</td></tr>
+<tr>
+<td><div class="qname">IN 10k + LIKE name '%John%'</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND name LIKE '%John%'</div></td>
+<td class="num win">51 ms</td>
+<td class="num">195 ms</td>
+<td class="wlabel">MySQL 3.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + LIKE dept '%IT%'</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND department LIKE '%IT%'</div></td>
+<td class="num win">51 ms</td>
+<td class="num">197 ms</td>
+<td class="wlabel">MySQL 3.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + LIKE name '%John%'</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.name LIKE '%John%'</div></td>
+<td class="num win">63 ms</td>
+<td class="num">224 ms</td>
+<td class="wlabel">MySQL 3.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + LIKE email '%example%'</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND e.email_address LIKE '%example%'</div></td>
+<td class="num win">150 ms</td>
+<td class="num">295 ms</td>
+<td class="wlabel">MySQL 2.0x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">SORTING  (12 cols, single table)</td></tr>
+<tr>
+<td><div class="qname">Top 100 by name</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails ORDER BY name DESC LIMIT 100</div></td>
+<td class="num win">1 ms</td>
+<td class="num">31 ms</td>
+<td class="wlabel">MySQL 31.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Sort 50k by department</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails ORDER BY department DESC LIMIT 50000</div></td>
+<td class="num">588 ms</td>
+<td class="num win">290 ms</td>
+<td class="wlabel">CH 2.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Sort 50k by sam_account_name</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails ORDER BY sam_account_name DESC LIMIT 50000</div></td>
+<td class="num">1194 ms</td>
+<td class="num win">282 ms</td>
+<td class="wlabel">CH 4.2x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">CONTAINS SEARCH  (12 cols, single table, LIMIT 1000)</td></tr>
+<tr>
+<td><div class="qname">LIKE name '%John%'</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE name LIKE '%John%' LIMIT 1000</div></td>
+<td class="num win">7 ms</td>
+<td class="num">20 ms</td>
+<td class="wlabel">MySQL 2.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">LIKE department '%IT%'</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE department LIKE '%IT%' LIMIT 1000</div></td>
+<td class="num win">4 ms</td>
+<td class="num">21 ms</td>
+<td class="wlabel">MySQL 5.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">LIKE dn '%Finance%'</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE distinguished_name LIKE '%Finance%' LIMIT 1000</div></td>
+<td class="num win">5 ms</td>
+<td class="num">22 ms</td>
+<td class="wlabel">MySQL 4.4x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">SORTING WITH JOIN  (15 cols, 3 tables)</td></tr>
+<tr>
+<td><div class="qname">JOIN Top 100 by name</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id ORDER BY g.name DESC LIMIT 100</div></td>
+<td class="num win">1 ms</td>
+<td class="num">538 ms</td>
+<td class="wlabel">MySQL 538.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN Sort 50k by department</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id ORDER BY g.department DESC LIMIT 50000</div></td>
+<td class="num win">997 ms</td>
+<td class="num">1057 ms</td>
+<td class="wlabel">MySQL 1.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN Sort 50k by mailbox DB</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id ORDER BY e.mailbox_database_name DESC LIMIT 50000</div></td>
+<td class="num win">737 ms</td>
+<td class="num">1089 ms</td>
+<td class="wlabel">MySQL 1.5x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">CONTAINS SEARCH WITH JOIN  (15 cols, LIMIT 1000)</td></tr>
+<tr>
+<td><div class="qname">JOIN + LIKE name '%John%'</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.name LIKE '%John%' LIMIT 1000</div></td>
+<td class="num win">8 ms</td>
+<td class="num">275 ms</td>
+<td class="wlabel">MySQL 34.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN + LIKE email '%example%'</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE e.email_address LIKE '%example%' LIMIT 1000</div></td>
+<td class="num win">5 ms</td>
+<td class="num">186 ms</td>
+<td class="wlabel">MySQL 37.2x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN + LIKE dept '%IT%'</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.department LIKE '%IT%' LIMIT 1000</div></td>
+<td class="num win">8 ms</td>
+<td class="num">252 ms</td>
+<td class="wlabel">MySQL 31.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN + LIKE logon '%corp%'</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE a.logon_name LIKE '%corp%' LIMIT 1000</div></td>
+<td class="num win">7 ms</td>
+<td class="num">165 ms</td>
+<td class="wlabel">MySQL 23.6x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">Cursor Nav — Single Table  (5 pages × 100 rows)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>MySQL (μs)</th><th>ClickHouse (μs)</th><th>Winner</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">579 μs</td>
+<td class="num">11482 μs</td>
+<td class="wlabel">MySQL 19.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">545 μs</td>
+<td class="num">11127 μs</td>
+<td class="wlabel">MySQL 20.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">475 μs</td>
+<td class="num">11359 μs</td>
+<td class="wlabel">MySQL 23.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">651 μs</td>
+<td class="num">10994 μs</td>
+<td class="wlabel">MySQL 16.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">507 μs</td>
+<td class="num">11922 μs</td>
+<td class="wlabel">MySQL 23.5x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">Cursor Nav With JOIN — 3 AD Tables  (5 pages × 100 rows)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>MySQL (μs)</th><th>ClickHouse (μs)</th><th>Winner</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">601 μs</td>
+<td class="num">499711 μs</td>
+<td class="wlabel">MySQL 831.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">556 μs</td>
+<td class="num">511157 μs</td>
+<td class="wlabel">MySQL 919.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">512 μs</td>
+<td class="num">495441 μs</td>
+<td class="wlabel">MySQL 967.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">1084 μs</td>
+<td class="num">506380 μs</td>
+<td class="wlabel">MySQL 467.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">1073 μs</td>
+<td class="num">538738 μs</td>
+<td class="wlabel">MySQL 502.1x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">Cursor Nav IN Filter — Single Table  (5 pages × 100 rows, id IN 10k)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>MySQL (μs)</th><th>ClickHouse (μs)</th><th>Winner</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num">371471 μs</td>
+<td class="num win">95043 μs</td>
+<td class="wlabel">CH 3.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num">364212 μs</td>
+<td class="num win">95004 μs</td>
+<td class="wlabel">CH 3.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num">357076 μs</td>
+<td class="num win">96139 μs</td>
+<td class="wlabel">CH 3.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num">349841 μs</td>
+<td class="num win">96426 μs</td>
+<td class="wlabel">CH 3.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num">344892 μs</td>
+<td class="num win">95712 μs</td>
+<td class="wlabel">CH 3.6x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">Cursor Nav IN Filter With JOIN — 3 AD Tables  (5 pages × 100 rows)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>MySQL (μs)</th><th>ClickHouse (μs)</th><th>Winner</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">372208 μs</td>
+<td class="num win">342847 μs</td>
+<td class="wlabel">CH 1.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">365599 μs</td>
+<td class="num win">268746 μs</td>
+<td class="wlabel">CH 1.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">359101 μs</td>
+<td class="num win">274987 μs</td>
+<td class="wlabel">CH 1.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">351287 μs</td>
+<td class="num win">272919 μs</td>
+<td class="wlabel">CH 1.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql">SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">344047 μs</td>
+<td class="num win">274858 μs</td>
+<td class="wlabel">CH 1.3x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">Cursor Nav IN Filter — Temp Table Opt  (5 pages × 100 rows)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>MySQL (μs)</th><th>ClickHouse (μs)</th><th>Winner</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">203 μs</td>
+<td class="num">111124 μs</td>
+<td class="wlabel">MySQL 547.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">118 μs</td>
+<td class="num">107433 μs</td>
+<td class="wlabel">MySQL 910.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">119 μs</td>
+<td class="num">99680 μs</td>
+<td class="wlabel">MySQL 837.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">414 μs</td>
+<td class="num">96697 μs</td>
+<td class="wlabel">MySQL 233.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql">SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num win">115 μs</td>
+<td class="num">92465 μs</td>
+<td class="wlabel">MySQL 804.0x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr class="tbl-title"><th colspan="4">DML Benchmarks</th></tr>
+<tr class="col-hdr"><th>Operation &amp; SQL</th><th>MySQL (ms)</th><th>ClickHouse (ms)</th><th>Winner</th></tr>
+</thead><tbody>
+<tr class="sec"><td colspan="4">Write Performance</td></tr>
+<tr>
+<td><div class="qname">Single INSERT (100 rows, 1×1)</div><div class="qsql">INSERT INTO ADSMUserGeneralDetails (unique_id, ...) VALUES (?, ...) [executed 100×]</div></td>
+<td class="num win">12 ms</td>
+<td class="num">527 ms</td>
+<td class="wlabel">MySQL 43.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Batch INSERT (1000 rows)</div><div class="qsql">INSERT INTO ADSMUserGeneralDetails (...) VALUES (?, ...) [addBatch / executeBatch, 1000 rows]</div></td>
+<td class="num">202 ms</td>
+<td class="num win">26 ms</td>
+<td class="wlabel">CH 7.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">UPDATE (50 rows)</div><div class="qsql">MySQL: UPDATE ADSMUserGeneralDetails SET department=?, title=? WHERE id=?  |  CH: INSERT upsert — same unique_id + newer updated_at (ReplacingMergeTree)</div></td>
+<td class="num win">16 ms</td>
+<td class="num">246 ms</td>
+<td class="wlabel">MySQL 15.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">DELETE (50 rows)</div><div class="qsql">MySQL: DELETE FROM ADSMUserGeneralDetails WHERE id=?  |  CH: INSERT soft-delete — same unique_id + is_deleted=1 + newer updated_at</div></td>
+<td class="num win">3 ms</td>
+<td class="num">233 ms</td>
+<td class="wlabel">MySQL 77.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">AD Sync batch (1000 users, 3 tables)</div><div class="qsql">UPDATE/INSERT all 3 tables per user (batched): GeneralDetails + AccountDetails + ExchangeDetails  |  5% deprovisioned</div></td>
+<td class="num">401 ms</td>
+<td class="num win">39 ms</td>
+<td class="wlabel">CH 10.3x faster</td>
+</tr>
+</tbody></table>
+<div style="background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:20px 24px;font-size:.85rem;color:#444;line-height:1.7">
+<b>Notes</b><ul style="margin:8px 0 0;padding-left:20px">
+<li><code>ADSMUserGeneralDetails</code> uses <code>ReplacingMergeTree ORDER BY (unique_id)</code> in ClickHouse — <code>id</code> is not the primary sort key, so <code>WHERE id &gt; N</code> cursor queries cannot use the sparse primary index and trigger a full scan per page.</li>
+<li>IN FILTER cursor (10k ids, raw): large IN literal re-parsed per page → MySQL ~370 ms; ClickHouse columnar scan ~95 ms.</li>
+<li>Temp table opt: 10k IDs loaded once into an indexed table; cursor pages use JOIN — eliminates the IN literal from every page query.</li>
+<li>CH UPDATE/DELETE pattern: INSERT with same <code>unique_id</code> + newer <code>updated_at</code>; engine deduplicates on next background merge.</li>
+</ul></div>
+<table>
+<thead>
+<tr class="tbl-title"><th colspan="4">ClickHouse: No-FINAL vs FINAL &mdash; ReplacingMergeTree Dedup Overhead</th></tr>
+<tr class="col-hdr"><th>Query &amp; SQL</th><th>CH No-FINAL (ms)</th><th>CH FINAL (ms)</th><th>FINAL Overhead</th></tr>
+</thead><tbody>
+<tr class="sec"><td colspan="4">AGGREGATION</td></tr>
+<tr>
+<td><div class="qname">Count All</div><div class="qsql">No-FINAL: SELECT COUNT(*) FROM ADSMUserGeneralDetails  |  FINAL: SELECT COUNT(*) FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0</div></td>
+<td class="num win">2 ms</td>
+<td class="num">20 ms</td>
+<td class="wlabel">No-FINAL 10.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Group By Department</div><div class="qsql">No-FINAL: SELECT department, COUNT(*), COUNT(DISTINCT title) FROM ADSMUserGeneralDetails GROUP BY department ORDER BY 2 DESC  |  FINAL: SELECT department, COUNT(*), COUNT(DISTINCT title) FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 GROUP BY department ORDER BY 2 DESC</div></td>
+<td class="num win">29 ms</td>
+<td class="num">71 ms</td>
+<td class="wlabel">No-FINAL 2.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Filter IT Dept</div><div class="qsql">No-FINAL: SELECT COUNT(*) FROM ADSMUserGeneralDetails WHERE department = 'IT'  |  FINAL: SELECT COUNT(*) FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND department = 'IT'</div></td>
+<td class="num win">13 ms</td>
+<td class="num">34 ms</td>
+<td class="wlabel">No-FINAL 2.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Count Enabled Accounts</div><div class="qsql">No-FINAL: SELECT COUNT(*) FROM ADSMUserAccountDetails WHERE account_enabled = 1  |  FINAL: SELECT COUNT(*) FROM ADSMUserAccountDetails WHERE account_enabled = 1</div></td>
+<td class="num win">3 ms</td>
+<td class="num">4 ms</td>
+<td class="wlabel">No-FINAL 1.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Group By Mailbox DB</div><div class="qsql">No-FINAL: SELECT mailbox_database_name, COUNT(*), AVG(quota_mb) FROM ADSMUserExchangeDetails GROUP BY mailbox_database_name ORDER BY 2 DESC  |  FINAL: SELECT mailbox_database_name, COUNT(*), AVG(quota_mb) FROM ADSMUserExchangeDetails GROUP BY mailbox_database_name ORDER BY 2 DESC</div></td>
+<td class="num">10 ms</td>
+<td class="num">10 ms</td>
+<td class="tie">tie</td>
+</tr>
+<tr class="sec"><td colspan="4">IN FILTER  (10,000 random ids, scattered across 1M)</td></tr>
+<tr>
+<td><div class="qname">IN 10k — COUNT(*)</div><div class="qsql">No-FINAL: SELECT COUNT(*) FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])  |  FINAL: SELECT COUNT(*) FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])</div></td>
+<td class="num win">92 ms</td>
+<td class="num">117 ms</td>
+<td class="wlabel">No-FINAL 1.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k — fetch all cols</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])</div></td>
+<td class="num win">184 ms</td>
+<td class="num">342 ms</td>
+<td class="wlabel">No-FINAL 1.9x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k — GROUP BY dept</div><div class="qsql">No-FINAL: SELECT department, COUNT(*) FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) GROUP BY department ORDER BY 2 DESC  |  FINAL: SELECT department, COUNT(*) FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) GROUP BY department ORDER BY 2 DESC</div></td>
+<td class="num win">85 ms</td>
+<td class="num">133 ms</td>
+<td class="wlabel">No-FINAL 1.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k — JOIN fetch</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids])</div></td>
+<td class="num">343 ms</td>
+<td class="num win">65 ms</td>
+<td class="wlabel">FINAL 5.3x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">IN FILTER + SORTING  (10,000 ids)</td></tr>
+<tr>
+<td><div class="qname">IN 10k + sort by name</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY name DESC  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY name DESC</div></td>
+<td class="num win">208 ms</td>
+<td class="num">330 ms</td>
+<td class="wlabel">No-FINAL 1.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + sort by dept</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY department DESC  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY department DESC</div></td>
+<td class="num win">191 ms</td>
+<td class="num">317 ms</td>
+<td class="wlabel">No-FINAL 1.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + sort by name</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY g.name DESC  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY g.name DESC</div></td>
+<td class="num">345 ms</td>
+<td class="num win">73 ms</td>
+<td class="wlabel">FINAL 4.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + sort by mailbox</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY e.mailbox_database_name DESC  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) ORDER BY e.mailbox_database_name DESC</div></td>
+<td class="num">359 ms</td>
+<td class="num win">65 ms</td>
+<td class="wlabel">FINAL 5.5x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">IN FILTER + CONTAINS SEARCH  (10,000 ids)</td></tr>
+<tr>
+<td><div class="qname">IN 10k + LIKE name '%John%'</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND name LIKE '%John%'  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND name LIKE '%John%'</div></td>
+<td class="num win">195 ms</td>
+<td class="num">310 ms</td>
+<td class="wlabel">No-FINAL 1.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + LIKE dept '%IT%'</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND department LIKE '%IT%'  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND department LIKE '%IT%'</div></td>
+<td class="num win">197 ms</td>
+<td class="num">321 ms</td>
+<td class="wlabel">No-FINAL 1.6x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + LIKE name '%John%'</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.name LIKE '%John%'  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND g.name LIKE '%John%'</div></td>
+<td class="num">224 ms</td>
+<td class="num win">60 ms</td>
+<td class="wlabel">FINAL 3.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">IN 10k + JOIN + LIKE email '%example%'</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND e.email_address LIKE '%example%'  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND e.email_address LIKE '%example%'</div></td>
+<td class="num">295 ms</td>
+<td class="num win">65 ms</td>
+<td class="wlabel">FINAL 4.5x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">SORTING  (12 cols, single table)</td></tr>
+<tr>
+<td><div class="qname">Top 100 by name</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails ORDER BY name DESC LIMIT 100  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 ORDER BY name DESC LIMIT 100</div></td>
+<td class="num win">31 ms</td>
+<td class="num">203 ms</td>
+<td class="wlabel">No-FINAL 6.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Sort 50k by department</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails ORDER BY department DESC LIMIT 50000  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 ORDER BY department DESC LIMIT 50000</div></td>
+<td class="num win">290 ms</td>
+<td class="num">356 ms</td>
+<td class="wlabel">No-FINAL 1.2x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Sort 50k by sam_account_name</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails ORDER BY sam_account_name DESC LIMIT 50000  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 ORDER BY sam_account_name DESC LIMIT 50000</div></td>
+<td class="num win">282 ms</td>
+<td class="num">372 ms</td>
+<td class="wlabel">No-FINAL 1.3x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">CONTAINS SEARCH  (12 cols, single table, LIMIT 1000)</td></tr>
+<tr>
+<td><div class="qname">LIKE name '%John%'</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE name LIKE '%John%' LIMIT 1000  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND name LIKE '%John%' LIMIT 1000</div></td>
+<td class="num win">20 ms</td>
+<td class="num">69 ms</td>
+<td class="wlabel">No-FINAL 3.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">LIKE department '%IT%'</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE department LIKE '%IT%' LIMIT 1000  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND department LIKE '%IT%' LIMIT 1000</div></td>
+<td class="num win">21 ms</td>
+<td class="num">71 ms</td>
+<td class="wlabel">No-FINAL 3.4x faster</td>
+</tr>
+<tr>
+<td><div class="qname">LIKE dn '%Finance%'</div><div class="qsql">No-FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE distinguished_name LIKE '%Finance%' LIMIT 1000  |  FINAL: SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND distinguished_name LIKE '%Finance%' LIMIT 1000</div></td>
+<td class="num win">22 ms</td>
+<td class="num">68 ms</td>
+<td class="wlabel">No-FINAL 3.1x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">SORTING WITH JOIN  (15 cols, 3 tables)</td></tr>
+<tr>
+<td><div class="qname">JOIN Top 100 by name</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id ORDER BY g.name DESC LIMIT 100  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 ORDER BY g.name DESC LIMIT 100</div></td>
+<td class="num">538 ms</td>
+<td class="num win">3 ms</td>
+<td class="wlabel">FINAL 179.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN Sort 50k by department</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id ORDER BY g.department DESC LIMIT 50000  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 ORDER BY g.department DESC LIMIT 50000</div></td>
+<td class="num">1057 ms</td>
+<td class="num win">1 ms</td>
+<td class="wlabel">FINAL 1057.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN Sort 50k by mailbox DB</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id ORDER BY e.mailbox_database_name DESC LIMIT 50000  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 ORDER BY e.mailbox_database_name DESC LIMIT 50000</div></td>
+<td class="num">1089 ms</td>
+<td class="num win">1 ms</td>
+<td class="wlabel">FINAL 1089.0x faster</td>
+</tr>
+<tr class="sec"><td colspan="4">CONTAINS SEARCH WITH JOIN  (15 cols, LIMIT 1000)</td></tr>
+<tr>
+<td><div class="qname">JOIN + LIKE name '%John%'</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.name LIKE '%John%' LIMIT 1000  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.name LIKE '%John%' LIMIT 1000</div></td>
+<td class="num">275 ms</td>
+<td class="num">0 ms</td>
+<td class="na">—</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN + LIKE email '%example%'</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE e.email_address LIKE '%example%' LIMIT 1000  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND e.email_address LIKE '%example%' LIMIT 1000</div></td>
+<td class="num">186 ms</td>
+<td class="num">0 ms</td>
+<td class="na">—</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN + LIKE dept '%IT%'</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.department LIKE '%IT%' LIMIT 1000  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.department LIKE '%IT%' LIMIT 1000</div></td>
+<td class="num">252 ms</td>
+<td class="num win">1 ms</td>
+<td class="wlabel">FINAL 252.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">JOIN + LIKE logon '%corp%'</div><div class="qsql">No-FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE a.logon_name LIKE '%corp%' LIMIT 1000  |  FINAL: SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND a.logon_name LIKE '%corp%' LIMIT 1000</div></td>
+<td class="num">165 ms</td>
+<td class="num">0 ms</td>
+<td class="na">—</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">CH: No-FINAL vs FINAL &mdash; Cursor Nav Single Table  (5 pages &times; 100 rows)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>CH No-FINAL (&mu;s)</th><th>CH FINAL (&mu;s)</th><th>FINAL Overhead</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">11482 &mu;s</td>
+<td class="num">204268 &mu;s</td>
+<td class="wlabel">No-FINAL 17.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">11127 &mu;s</td>
+<td class="num">178322 &mu;s</td>
+<td class="wlabel">No-FINAL 16.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">11359 &mu;s</td>
+<td class="num">161624 &mu;s</td>
+<td class="wlabel">No-FINAL 14.2x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">10994 &mu;s</td>
+<td class="num">166164 &mu;s</td>
+<td class="wlabel">No-FINAL 15.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">11922 &mu;s</td>
+<td class="num">168619 &mu;s</td>
+<td class="wlabel">No-FINAL 14.1x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">CH: No-FINAL vs FINAL &mdash; Cursor Nav With JOIN  (3 AD tables)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>CH No-FINAL (&mu;s)</th><th>CH FINAL (&mu;s)</th><th>FINAL Overhead</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql"><b>No-FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">499711 &mu;s</td>
+<td class="num win">1649 &mu;s</td>
+<td class="wlabel">FINAL 303.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql"><b>No-FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">511157 &mu;s</td>
+<td class="num win">1892 &mu;s</td>
+<td class="wlabel">FINAL 270.2x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql"><b>No-FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">495441 &mu;s</td>
+<td class="num win">1501 &mu;s</td>
+<td class="wlabel">FINAL 330.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql"><b>No-FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">506380 &mu;s</td>
+<td class="num win">794 &mu;s</td>
+<td class="wlabel">FINAL 637.8x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql"><b>No-FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT g.id, g.unique_id, g.name, g.department, g.title, a.logon_name, a.logon_to_machine, a.account_enabled, a.last_logon_time, a.account_expires, e.mailbox_name, e.mailbox_database_name, e.email_address, e.quota_mb, e.mailbox_properties FROM ADSMUserGeneralDetails FINAL g JOIN ADSMUserAccountDetails  a ON a.unique_id = g.unique_id JOIN ADSMUserExchangeDetails e ON e.unique_id = g.unique_id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">538738 &mu;s</td>
+<td class="num win">831 &mu;s</td>
+<td class="wlabel">FINAL 648.3x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">CH: No-FINAL vs FINAL &mdash; Cursor Nav IN Filter  (id IN 10k)</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>CH No-FINAL (&mu;s)</th><th>CH FINAL (&mu;s)</th><th>FINAL Overhead</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">95043 &mu;s</td>
+<td class="num">281139 &mu;s</td>
+<td class="wlabel">No-FINAL 3.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">95004 &mu;s</td>
+<td class="num">288468 &mu;s</td>
+<td class="wlabel">No-FINAL 3.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">96139 &mu;s</td>
+<td class="num">298214 &mu;s</td>
+<td class="wlabel">No-FINAL 3.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">96426 &mu;s</td>
+<td class="num">295152 &mu;s</td>
+<td class="wlabel">No-FINAL 3.1x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id IN (4783,477451,939177,624790,942796,933658,388835, ... [10,000 ids]) AND id &gt; {cursor} ORDER BY id LIMIT 100</div></td>
+<td class="num win">95712 &mu;s</td>
+<td class="num">296609 &mu;s</td>
+<td class="wlabel">No-FINAL 3.1x faster</td>
+</tr>
+</tbody></table>
+<table>
+<thead><tr class="tbl-title"><th colspan="4">CH: No-FINAL vs FINAL &mdash; Cursor Nav IN Filter Temp Table</th></tr>
+<tr class="col-hdr"><th>Page &amp; SQL</th><th>CH No-FINAL (&mu;s)</th><th>CH FINAL (&mu;s)</th><th>FINAL Overhead</th></tr></thead><tbody>
+<tr>
+<td><div class="qname">Nav page 1</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">111124 &mu;s</td>
+<td class="num win">720 &mu;s</td>
+<td class="wlabel">FINAL 154.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 2</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">107433 &mu;s</td>
+<td class="num win">721 &mu;s</td>
+<td class="wlabel">FINAL 149.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 3</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">99680 &mu;s</td>
+<td class="num win">689 &mu;s</td>
+<td class="wlabel">FINAL 144.7x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 4</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">96697 &mu;s</td>
+<td class="num win">626 &mu;s</td>
+<td class="wlabel">FINAL 154.5x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Nav page 5</div><div class="qsql"><b>No-FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.id &gt; {cursor} ORDER BY g.id LIMIT 100<br><b>FINAL:</b> SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL g JOIN tmp_bench_ids t ON t.id = g.id WHERE g.is_deleted = 0 AND g.id &gt; {cursor} ORDER BY g.id LIMIT 100</div></td>
+<td class="num">92465 &mu;s</td>
+<td class="num win">13223 &mu;s</td>
+<td class="wlabel">FINAL 7.0x faster</td>
+</tr>
+</tbody></table>
+<div style="background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:16px 24px;font-size:.85rem;color:#444;line-height:1.7;margin-bottom:32px">
+<b>ClickHouse FINAL notes</b><ul style="margin:8px 0 0;padding-left:20px">
+<li><code>FINAL</code> forces the <code>ReplacingMergeTree</code> engine to merge duplicate versions on-the-fly during the query, keeping only the latest row per <code>ORDER BY</code> key (<code>unique_id</code>).</li>
+<li><code>WHERE is_deleted = 0</code> excludes soft-deleted rows that were inserted with the upsert-delete pattern (<code>is_deleted=1 + newer updated_at</code>).</li>
+<li><code>ADSMUserAccountDetails</code> and <code>ADSMUserExchangeDetails</code> are plain <code>MergeTree</code> — <code>FINAL</code> is not applied to them and their queries are identical between the two columns.</li>
+<li>The overhead depends on how many unmerged duplicate versions exist in the table parts. After a full background merge the overhead approaches zero.</li>
+</ul></div>
+<table>
+<thead>
+<tr class="tbl-title"><th colspan="4">CSV Export Benchmark — cursor pagination (LIMIT 5,000 per batch)</th></tr>
+<tr class="col-hdr"><th>Metric &amp; SQL</th><th>MySQL</th><th>ClickHouse</th><th>Winner</th></tr>
+</thead><tbody>
+<tr class="sec"><td colspan="4">Export Summary</td></tr>
+<tr>
+<td><div class="qname">Total export time</div><div class="qsql">MySQL: <code>SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails WHERE id &gt; {cursor} ORDER BY id LIMIT 5000</code><br>ClickHouse: <code>SELECT id, unique_id, object_guid, sam_account_name, name, firstname, lastname, initial, display_name, distinguished_name, department, title FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND unique_id &gt; '{cursor}' ORDER BY unique_id LIMIT 5000</code></div></td>
+<td class="num win">2,320 ms</td>
+<td class="num">26,730 ms</td>
+<td class="wlabel">MySQL 11.5x faster</td>
+</tr>
+<tr><td><div class="qname">Rows exported</div><div class="qsql">CH excludes is_deleted=1 rows (FINAL WHERE is_deleted = 0)</div></td><td class="num">1,001,050</td><td class="num">1,001,000</td><td class="tie">—</td></tr>
+<tr><td><div class="qname">Batches (pages of 5,000 rows)</div></td><td class="num">201</td><td class="num">201</td><td class="tie">—</td></tr>
+<tr>
+<td><div class="qname">Output file size</div><div class="qsql">CSV file written row-by-row with RFC 4180 escaping</div></td>
+<td class="num">169.1 MB</td>
+<td class="num win">169.1 MB</td>
+<td class="wlabel">CH 1.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Throughput (rows/sec)</div><div class="qsql">Sustained read + write throughput over the full export</div></td>
+<td class="num win">431,487 rows/s</td>
+<td class="num">37,448 rows/s</td>
+<td class="wlabel">MySQL 11.5x higher</td>
+</tr>
+<tr class="sec"><td colspan="4">Per-Batch Timing</td></tr>
+<tr>
+<td><div class="qname">Min batch time</div><div class="qsql">Best single page (5,000 rows read + written to CSV)</div></td>
+<td class="num win">4 ms</td>
+<td class="num">5 ms</td>
+<td class="wlabel">MySQL 1.3x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Avg batch time</div><div class="qsql">Mean page time across all batches</div></td>
+<td class="num win">11 ms</td>
+<td class="num">132 ms</td>
+<td class="wlabel">MySQL 12.0x faster</td>
+</tr>
+<tr>
+<td><div class="qname">Max batch time</div><div class="qsql">Slowest single page (5,000 rows)</div></td>
+<td class="num win">69 ms</td>
+<td class="num">235 ms</td>
+<td class="wlabel">MySQL 3.4x faster</td>
+</tr>
+</tbody></table>
+<div style="background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:16px 24px;font-size:.85rem;color:#444;line-height:1.7;margin-bottom:32px">
+<b>Export notes</b><ul style="margin:8px 0 0;padding-left:20px">
+<li>MySQL uses: <code>WHERE id &gt; {lastId} ORDER BY id LIMIT 5,000</code></li>
+<li>ClickHouse uses: <code>WHERE unique_id &gt; '{lastUniqueId}' ORDER BY unique_id LIMIT 5,000</code> + <code>FINAL WHERE is_deleted = 0</code></li>
+<li><code>unique_id</code> is the <code>ReplacingMergeTree ORDER BY</code> key — paginating by <code>unique_id</code> allows ClickHouse to use its sparse primary index (one index lookup per page), unlike paginating by <code>id</code> which requires a full scan per batch.</li>
+<li><code>FINAL</code> forces ReplacingMergeTree dedup before scan and excludes <code>is_deleted=1</code> soft-deleted rows.</li>
+<li>Each batch is an independent query — no open cursor or server-side stream is held between pages.</li>
+</ul></div>
+</body></html>

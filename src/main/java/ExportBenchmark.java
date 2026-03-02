@@ -26,6 +26,8 @@ public class ExportBenchmark {
     private static final String CH_USER = "default";
     private static final String CH_PASS = "";
 
+    private static final String EXPORT_RESULTS_FILE = "export_results.txt";
+
     // ── Export config ─────────────────────────────────────────────────────────
     private static final int    BATCH_SIZE   = 5_000;
     private static final String MYSQL_OUTPUT = "export_mysql.csv";
@@ -41,10 +43,12 @@ public class ExportBenchmark {
         "SELECT " + ALL_COLS +
         " FROM ADSMUserGeneralDetails WHERE id > %d ORDER BY id LIMIT " + BATCH_SIZE;
 
-    // ClickHouse: FINAL deduplicates ReplacingMergeTree; exclude soft-deleted rows
+    // ClickHouse: FINAL deduplicates ReplacingMergeTree; exclude soft-deleted rows.
+    // Paginates by unique_id (the ReplacingMergeTree ORDER BY key) so ClickHouse can use
+    // its sparse primary index — avoids a full scan per batch.
     private static final String CH_SQL_TPL =
         "SELECT " + ALL_COLS +
-        " FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND id > %d ORDER BY id LIMIT " + BATCH_SIZE;
+        " FROM ADSMUserGeneralDetails FINAL WHERE is_deleted = 0 AND unique_id > '%s' ORDER BY unique_id LIMIT " + BATCH_SIZE;
 
     private static final String CSV_HEADER = ALL_COLS.replace(" ", "");
 
@@ -55,14 +59,24 @@ public class ExportBenchmark {
         final long   rowsExported;
         final int    batchCount;
         final long   fileSizeBytes;
+        final long   minBatchMs;
+        final long   avgBatchMs;
+        final long   maxBatchMs;
+        final String sqlTemplate;   // %d replaced with {cursor} for display
 
         ExportResult(String db, long totalMs, long rowsExported,
-                     int batchCount, long fileSizeBytes) {
+                     int batchCount, long fileSizeBytes,
+                     long minBatchMs, long avgBatchMs, long maxBatchMs,
+                     String sqlTemplate) {
             this.db            = db;
             this.totalMs       = totalMs;
             this.rowsExported  = rowsExported;
             this.batchCount    = batchCount;
             this.fileSizeBytes = fileSizeBytes;
+            this.minBatchMs    = minBatchMs;
+            this.avgBatchMs    = avgBatchMs;
+            this.maxBatchMs    = maxBatchMs;
+            this.sqlTemplate   = sqlTemplate;
         }
 
         double rowsPerSec() {
@@ -73,7 +87,7 @@ public class ExportBenchmark {
     // ── Main ──────────────────────────────────────────────────────────────────
     public static void main(String[] args) throws Exception {
         System.out.println("=".repeat(72));
-        System.out.println("  CSV Export Benchmark — cursor pagination (id > N LIMIT 5000)");
+        System.out.println("  CSV Export Benchmark — MySQL: id > N LIMIT 5000 | CH: unique_id > '{N}' LIMIT 5000");
         System.out.println("=".repeat(72));
 
         ExportResult mysqlResult = null;
@@ -91,9 +105,9 @@ public class ExportBenchmark {
 
         // ── ClickHouse export ─────────────────────────────────────────────────
         System.out.println("\n[2/2] ClickHouse export → " + CH_OUTPUT);
-        System.out.printf("  SQL template: %s%n%n", String.format(CH_SQL_TPL, 0));
+        System.out.printf("  SQL template: %s%n%n", String.format(CH_SQL_TPL, ""));
         try (Connection conn = DriverManager.getConnection(CH_URL, CH_USER, CH_PASS)) {
-            chResult = runExport(conn, CH_SQL_TPL, CH_OUTPUT, "ClickHouse");
+            chResult = runExport(conn, CH_SQL_TPL, CH_OUTPUT, "ClickHouse", "unique_id");
         } catch (Exception e) {
             System.err.println("  ClickHouse export failed: " + e.getMessage());
             e.printStackTrace();
@@ -101,6 +115,7 @@ public class ExportBenchmark {
 
         // ── Summary ───────────────────────────────────────────────────────────
         printSummary(mysqlResult, chResult);
+        saveExportResults(mysqlResult, chResult);
     }
 
     // ── Core export logic ─────────────────────────────────────────────────────
@@ -112,6 +127,9 @@ public class ExportBenchmark {
         long totalRows   = 0;
         int  batchNum    = 0;
         long cursor      = 0;   // last id seen; next batch fetches id > cursor
+        long minBatchMs  = Long.MAX_VALUE;
+        long maxBatchMs  = 0;
+        long sumBatchMs  = 0;
 
         try (PrintWriter writer = new PrintWriter(
                 new BufferedWriter(new FileWriter(outFile), 1 << 20))) {
@@ -155,6 +173,9 @@ public class ExportBenchmark {
                 cursor = lastId;
 
                 long batchMs = System.currentTimeMillis() - batchStart;
+                minBatchMs = Math.min(minBatchMs, batchMs);
+                maxBatchMs = Math.max(maxBatchMs, batchMs);
+                sumBatchMs += batchMs;
                 long totalMs = System.currentTimeMillis() - exportStart;
                 double rps   = totalRows * 1000.0 / totalMs;
 
@@ -171,11 +192,131 @@ public class ExportBenchmark {
 
         long totalMs      = System.currentTimeMillis() - exportStart;
         long fileSizeBytes = new File(outFile).length();
+        long avgBatchMs   = batchNum > 0 ? sumBatchMs / batchNum : 0;
+        if (minBatchMs == Long.MAX_VALUE) minBatchMs = 0;
 
         System.out.printf("%n  [%s] Done. %,d rows → %s (%.1f MB) in %,d ms%n",
             dbLabel, totalRows, outFile, fileSizeBytes / 1_048_576.0, totalMs);
 
-        return new ExportResult(dbLabel, totalMs, totalRows, batchNum, fileSizeBytes);
+        return new ExportResult(dbLabel, totalMs, totalRows, batchNum, fileSizeBytes,
+                                minBatchMs, avgBatchMs, maxBatchMs,
+                                sqlTemplate.replace("%d", "{cursor}"));
+    }
+
+    // ── String-cursor export (for unique_id pagination) ──────────────────────
+    /**
+     * Like runExport but paginates using a String cursor column instead of id.
+     * Used for ClickHouse where the ReplacingMergeTree ORDER BY key is unique_id,
+     * allowing the sparse primary index to serve each page without a full scan.
+     *
+     * @param strCursorCol  column name to read as the pagination cursor (e.g. "unique_id")
+     */
+    private static ExportResult runExport(Connection conn, String sqlTemplate,
+                                           String outFile, String dbLabel,
+                                           String strCursorCol)
+            throws Exception {
+
+        long exportStart = System.currentTimeMillis();
+        long totalRows   = 0;
+        int  batchNum    = 0;
+        String cursor    = "";   // empty string → unique_id > '' matches all rows on first page
+        long minBatchMs  = Long.MAX_VALUE;
+        long maxBatchMs  = 0;
+        long sumBatchMs  = 0;
+
+        try (PrintWriter writer = new PrintWriter(
+                new BufferedWriter(new FileWriter(outFile), 1 << 20))) {
+
+            writer.println(CSV_HEADER);
+
+            while (true) {
+                String sql = String.format(sqlTemplate, cursor);
+                long batchStart  = System.currentTimeMillis();
+                long rowsInBatch = 0;
+                String lastCursor = cursor;
+
+                try (Statement stmt = conn.createStatement();
+                     ResultSet  rs   = stmt.executeQuery(sql)) {
+
+                    int colCount = rs.getMetaData().getColumnCount();
+                    StringBuilder batchBuffer = new StringBuilder(BATCH_SIZE * 120);
+
+                    while (rs.next()) {
+                        rowsInBatch++;
+                        lastCursor = rs.getString(strCursorCol);
+
+                        for (int c = 1; c <= colCount; c++) {
+                            batchBuffer.append(escapeCsv(rs.getString(c)));
+                            if (c < colCount) batchBuffer.append(',');
+                        }
+                        batchBuffer.append('\n');
+                    }
+
+                    if (batchBuffer.length() > 0) {
+                        writer.print(batchBuffer);
+                    }
+                }
+
+                if (rowsInBatch == 0) break;
+
+                batchNum++;
+                totalRows += rowsInBatch;
+                cursor = lastCursor;
+
+                long batchMs = System.currentTimeMillis() - batchStart;
+                minBatchMs = Math.min(minBatchMs, batchMs);
+                maxBatchMs = Math.max(maxBatchMs, batchMs);
+                sumBatchMs += batchMs;
+                long totalMs = System.currentTimeMillis() - exportStart;
+                double rps   = totalRows * 1000.0 / totalMs;
+
+                System.out.printf(
+                    "  Batch %4d | %s > %-30s | rows: %,5d | batch: %5d ms" +
+                    " | total: %6d ms | %.0f rows/sec%n",
+                    batchNum, strCursorCol, cursor,
+                    rowsInBatch, batchMs, totalMs, rps);
+
+                if (rowsInBatch < BATCH_SIZE) break;
+            }
+        }
+
+        long totalMs      = System.currentTimeMillis() - exportStart;
+        long fileSizeBytes = new File(outFile).length();
+        long avgBatchMs   = batchNum > 0 ? sumBatchMs / batchNum : 0;
+        if (minBatchMs == Long.MAX_VALUE) minBatchMs = 0;
+
+        System.out.printf("%n  [%s] Done. %,d rows → %s (%.1f MB) in %,d ms%n",
+            dbLabel, totalRows, outFile, fileSizeBytes / 1_048_576.0, totalMs);
+
+        return new ExportResult(dbLabel, totalMs, totalRows, batchNum, fileSizeBytes,
+                                minBatchMs, avgBatchMs, maxBatchMs,
+                                sqlTemplate.replace("'%s'", "'{cursor}'"));
+    }
+
+    // ── Persist results for HTML report ──────────────────────────────────────
+    private static void saveExportResults(ExportResult mysql, ExportResult ch) {
+        try (PrintWriter w = new PrintWriter(new java.io.FileWriter(EXPORT_RESULTS_FILE))) {
+            w.println("# CSV Export Benchmark Results");
+            w.println("# Generated: " + new java.util.Date());
+            w.println("# Used by clickHouseDemo.writeHtmlReport() to include in benchmark_report.html");
+            w.println();
+            for (ExportResult r : new ExportResult[]{mysql, ch}) {
+                if (r == null) continue;
+                String p = "export." + r.db.toLowerCase().replace("clickhouse", "ch") + ".";
+                w.println(p + "totalMs="       + r.totalMs);
+                w.println(p + "rowsExported="  + r.rowsExported);
+                w.println(p + "batchCount="    + r.batchCount);
+                w.println(p + "fileSizeBytes=" + r.fileSizeBytes);
+                w.println(p + "minBatchMs="    + r.minBatchMs);
+                w.println(p + "avgBatchMs="    + r.avgBatchMs);
+                w.println(p + "maxBatchMs="    + r.maxBatchMs);
+                w.println(p + "sqlTemplate="   + r.sqlTemplate);
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: could not write " + EXPORT_RESULTS_FILE + ": " + e.getMessage());
+            return;
+        }
+        System.out.println("Export results saved to: " + EXPORT_RESULTS_FILE);
     }
 
     // ── CSV escaping (RFC 4180) ───────────────────────────────────────────────
@@ -223,11 +364,13 @@ public class ExportBenchmark {
         System.out.println("=".repeat(72));
         System.out.println();
         System.out.println("Notes:");
-        System.out.println("  Both DBs use cursor pagination:  WHERE id > {lastId} ORDER BY id LIMIT 5000");
-        System.out.println("  ClickHouse adds:                 FINAL WHERE is_deleted = 0");
+        System.out.println("  MySQL:      WHERE id > {lastId} ORDER BY id LIMIT 5000");
+        System.out.println("  ClickHouse: WHERE unique_id > '{lastUniqueId}' ORDER BY unique_id LIMIT 5000");
+        System.out.println("              + FINAL WHERE is_deleted = 0");
         System.out.println("    FINAL forces ReplacingMergeTree dedup (ADSMUserGeneralDetails) before scan.");
-        System.out.println("  ClickHouse ORDER BY key is (unique_id), not (id) — cursor queries on id");
-        System.out.println("    do not benefit from CH's primary index, causing full scan per page.");
+        System.out.println("    unique_id is the ReplacingMergeTree ORDER BY key — cursor queries on");
+        System.out.println("    unique_id benefit from CH's sparse primary index (one index lookup per page");
+        System.out.println("    vs full scan when paginating by id).");
         System.out.println("  Each page is an independent query — no open cursor/stream held.");
     }
 
